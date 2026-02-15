@@ -25,11 +25,26 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   PokemonStore store = PokemonStore(PokemonRepository());
   Pokemon? selected;
+  late ScrollController _scrollController;
 
   @override
   void initState() {
     super.initState();
-    store.fetchPokemons(); // load data on start
+    store.fetchInitial(); // load data on start
+
+    _scrollController = ScrollController();
+
+    _scrollController.addListener(() {
+      if (_scrollController.position.extentAfter < 300 && !store.isLoadingMore && store.response.status == ResponseStatus.success) {
+        store.loadMore();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -42,9 +57,14 @@ class _HomePageState extends State<HomePage> {
         builder: (_) {
           switch (store.response.status) {
             case ResponseStatus.loading:
-              return _buildSkeletonList(crossAxisCount, isLandscape);
+              return _buildSkeletonList(crossAxisCount, isLandscape, limitPage);
             case ResponseStatus.success:
-              final pokemons = store.response.data ?? []; // List<Pokemon>
+              final pokemons = store.pokemons; // List<Pokemon>
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients && _scrollController.position.maxScrollExtent == 0) {
+                  store.loadMore();
+                }
+              });
               return isLandscape
                   ? Row(
                       children: [
@@ -96,8 +116,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSkeletonList(int crossAxisCount, bool isLandscape) {
-    const skeletonItemCount = limitPage;
+  Widget _buildSkeletonList(int crossAxisCount, bool isLandscape, int itemCount) {
     return SafeArea(
       left: false,
       child: Shimmer.fromColors(
@@ -111,7 +130,7 @@ class _HomePageState extends State<HomePage> {
             crossAxisSpacing: 0,
             childAspectRatio: isLandscape ? 2 : 1.5,
           ),
-          itemCount: skeletonItemCount,
+          itemCount: itemCount,
           itemBuilder: (_, index) => SkeletonCard(isLandscape: isLandscape),
         ),
       ),
@@ -121,33 +140,38 @@ class _HomePageState extends State<HomePage> {
   Widget _buildList(List pokemons, int crossAxisCount, bool isLandscape) {
     return SafeArea(
       left: false,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(8),
+      child: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.all(8),
+            sliver: SliverGrid(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final pokemon = pokemons[index];
+                return isLandscape
+                    ? PokemonCardLandscape(pokemon: pokemon, onTap: () => setState(() => selected = pokemon))
+                    : PokemonCard(
+                        pokemon: pokemon,
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => DetailPokemonPage(pokemon: pokemon)));
+                        },
+                      );
+              }, childCount: pokemons.length),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: crossAxisCount, childAspectRatio: isLandscape ? 2 : 1.5),
+            ),
+          ),
 
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-
-          mainAxisSpacing: 0,
-          crossAxisSpacing: 0,
-          childAspectRatio: isLandscape ? 2 : 1.5,
-        ),
-        itemCount: pokemons.length,
-        itemBuilder: (_, index) {
-          final pokemon = pokemons[index];
-          return isLandscape
-              ? PokemonCardLandscape(pokemon: pokemon, onTap: () => setState(() => selected = pokemon))
-              : PokemonCard(
-                  pokemon: pokemon,
-                  onTap: () {
-                    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-                    if (isLandscape) {
-                      setState(() => selected = pokemon);
-                    } else {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => DetailPokemonPage(pokemon: pokemon)));
-                    }
-                  },
-                );
-        },
+          if (store.isLoadingMore)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: CircularProgressIndicator(color: Colors.red),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -2,17 +2,17 @@ import 'package:dio/dio.dart';
 import 'package:pokedex_app/model/pokemon_model.dart';
 import 'package:pokedex_app/model/repositories_response.dart';
 
-const limitPage = 20;
+const limitPage = 6;
 
 class PokemonRepository {
   final Dio _dio = Dio();
 
-  Future<RepositoriesResponse<List<Pokemon>>> fetchPokemons({int limit = limitPage}) async {
+  Future<RepositoriesResponse<List<Pokemon>>> fetchPokemons({required int limit, required int offset}) async {
     try {
-      final response = await _dio.get('https://pokeapi.co/api/v2/pokemon?limit=$limit');
+      final response = await _dio.get('https://pokeapi.co/api/v2/pokemon?limit=$limit&offset=$offset');
+
       final results = response.data['results'] as List;
 
-      // Map over results and fetch details
       final pokemons = await Future.wait(
         results.map((pokemon) async {
           final detailsRes = await _dio.get(pokemon['url']);
